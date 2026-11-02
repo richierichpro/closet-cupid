@@ -82,6 +82,7 @@ export interface Report {
   colouring: Colouring | null
   tryons: number
   profile: Profile | null
+  mind_map: MindMap
   experiments: { hypothesis: string; status: 'testing' | 'confirmed' | 'rejected'; evidence: string }[]
   planned_shown: number
   llm: string | null
@@ -95,12 +96,27 @@ export interface Brand {
   too_pricey: { label: string; pricey_rate: number; n: number }[]
   tryon: { tries: number; not_on: number; dresses: { title: string; image: string; tries: number; not_on: number }[] }
   undertones: Record<Undertone, number>
-  by_undertone: { label: string; gap: number; tones: Record<Undertone, { rate: number | null; n: number }> }[]
+  undertone_map: Grid   // colour × the undertone YouCam Skin Tone Analysis read
+  style_map: Grid       // silhouette × colour
   profiled: number
   dislikes: { label: string; shoppers: number; why: string[] }[]
 }
 
 export type Undertone = 'warm' | 'neutral' | 'cool'
+
+// Like rates on a grid; rate is null when a cell has too few swipes to mean anything.
+export interface Grid {
+  rows: string[]
+  cols: string[]
+  cells: { rate: number | null; n: number }[][]
+}
+
+// What Cupid believed after each swipe: +1 sure they like it, −1 sure they don't.
+export interface MindMap {
+  swipes: number[]
+  rows: { label: string; values: number[] }[]
+  told: { after: number; question: string | null; changes: string[] }[]
+}
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {

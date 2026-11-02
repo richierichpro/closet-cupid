@@ -48,3 +48,6 @@ export const Sliders = (p: P) => (
 )
 export const Sparkle = (p: P) => <Icon {...p}><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z" /></Icon>
 export const Search = (p: P) => <Icon {...p}><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></Icon>
+export const Chart = (p: P) => (
+  <Icon {...p}><path d="M3 3v18h18" /><path d="M7 15v2" /><path d="M11 10v7" /><path d="M15 6v11" /><path d="M19 12v5" /></Icon>
+)

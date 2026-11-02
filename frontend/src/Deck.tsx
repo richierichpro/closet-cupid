@@ -1,7 +1,7 @@
 import { animate, motion, useMotionValue, useTransform } from 'framer-motion'
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import FiltersStep, { filterCount } from './FiltersStep'
-import { ArrowLeft, External, Heart, Info, Sliders, Sparkle, Star, Tag, Undo, X } from './Icons'
+import { ArrowLeft, Chart, External, Heart, Info, Sliders, Sparkle, Star, Tag, Undo, X } from './Icons'
 import Logo from './Logo'
 import Payoff from './Payoff'
 import { api, money, type Action, type Card, type ChosenFilters, type Payoff as PayoffData, type Verdict } from './api'
@@ -152,6 +152,7 @@ export default function Deck({ sid, onMatches, onRestart }: { sid: string; onMat
       <div className="topbar">
         <Logo />
         <div className="topbar-actions">
+          <a className="icon-btn" href="/board" target="_blank" rel="noopener" aria-label="Insights" title="Your insights and brand insights"><Chart size={18} /></a>
           <button className="icon-btn" onClick={() => setChanging(true)} aria-label="Refine filters"><Sliders size={18} /></button>
           <button className="icon-btn" onClick={onMatches} aria-label={`Matches (${liked})`}>
             <Heart size={18} />{liked > 0 && <span className="count">{liked}</span>}

@@ -1,6 +1,6 @@
 import { animate, motion, useMotionValue, useTransform } from 'framer-motion'
 import { useEffect, useRef, useState } from 'react'
-import { ArrowRight, Heart, Sparkle, Star } from './Icons'
+import { ArrowRight, Chart, Heart, Sparkle, Star } from './Icons'
 import Logo from './Logo'
 import { api, money, type Options } from './api'
 
@@ -23,7 +23,10 @@ export default function Welcome({ onStart }: { onStart: () => void }) {
   return (
     <div className="welcome">
       <div className="welcome-word" aria-hidden>CUPID</div>
-      <div className="welcome-brand"><Logo size={22} /></div>
+      <div className="welcome-top">
+        <div className="welcome-brand"><Logo size={22} /></div>
+        <a className="insights-link" href="/board"><Chart size={15} />Insights</a>
+      </div>
 
       <div className="fan">
         {show[0] && <FanCard item={show[0]} className="back" />}

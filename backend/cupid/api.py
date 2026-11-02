@@ -777,7 +777,8 @@ def _agent_learn(s: Session, item: Item, action: str, n: int):
         s.cupid.beliefs = beliefs                # the next cards are ranked with what it just learned
         s.cupid.stated.reasons.update(reasons)   # and its own words explain the flags
         s.thoughts.append({"n": n, "text": profile["thought"], "by": "llm", "action": action, "shift": shift,
-                           "changes": changes, "item": {"image": f"/images/{item.image}", "title": item.title}})
+                           "changes": changes, "item": {"image": f"/images/{item.image}", "title": item.title},
+                           "stance": {f: round(v, 2) for f, v in _stance(profile).items()}})
     with db_lock:
         db.save_profile(conn, s.id, profile)
     _event(s, "thought", profile["thought"])
@@ -871,7 +872,7 @@ def answer(sid: str, rnd: int, i: int, body: AnswerIn):
         s.history.append(f"You asked \"{q['question']}\" ({a['label']} or {b['label']}). They picked: {picked}.")
         s.thoughts.append({"n": s.cupid.n, "text": q["reply"], "by": "llm", "action": "told", "shift": TOLD,
                            "changes": changes, "item": {"image": shown["image"], "title": q["question"]},
-                           "question": f"{q['question']} {a['label']} or {b['label']}?"})
+                           "question": q["question"]})
     return q
 
 
@@ -1077,6 +1078,27 @@ def matches(sid: str):
 
 # ---------- analytics ----------
 
+MIND_ROWS, MIND_SWIPES = 10, 48   # the heatmap of Cupid's mind: its strongest beliefs, over the latest swipes
+
+
+def _mind_map(s: Session) -> dict:
+    """What Cupid believed after each swipe: attribute rows × swipe columns, + like / − dislike.
+    Rows are the beliefs it held most strongly at any point, ordered by where they ended up."""
+    steps = [t for t in s.thoughts if "stance" in t][-MIND_SWIPES:]
+    if not steps:
+        return {"swipes": [], "rows": [], "told": []}
+    peak: dict[str, float] = {}
+    for t in steps:
+        for f, v in t["stance"].items():
+            peak[f] = max(peak.get(f, 0.0), abs(v))
+    final = steps[-1]["stance"]
+    rows = sorted(sorted(peak, key=lambda f: -peak[f])[:MIND_ROWS], key=lambda f: -final.get(f, 0.0))
+    return {"swipes": [t["n"] + 1 for t in steps],
+            "rows": [{"label": _label(f), "values": [t["stance"].get(f, 0.0) for t in steps]} for f in rows],
+            "told": [{"after": t["n"], "question": t.get("question"), "changes": t["changes"]}
+                     for t in s.thoughts if t.get("action") == "told"]}
+
+
 def _report(s: Session) -> dict:
     rel, ev = s.cupid.relative(), s.cupid.explainable()
     taste = [kv for kv in sorted(ev.items(), key=lambda kv: -abs(kv[1])) if kv[1]][:12]
@@ -1105,6 +1127,7 @@ def _report(s: Session) -> dict:
         "turning_points": sorted(sorted((t for t in s.thoughts if t.get("changes")),
                                         key=lambda t: (t["action"] != "told", -t["shift"]))[:4], key=lambda t: t["n"]),
         "profile": s.profile,
+        "mind_map": _mind_map(s),
         "experiments": s.experiments,
         "planned_shown": s.planned_shown,
         "llm": agent.MODEL if agent.available() else None,
@@ -1165,6 +1188,31 @@ def brand():
 
 
 UNDERTONES = ("warm", "neutral", "cool")
+GRID_ROWS, GRID_COLS, GRID_MIN = 8, 6, 3   # heatmap size; a cell needs this many swipes to show a rate
+
+
+def _grid(rows, row_of, col_of, cols: tuple[str, ...] | None = None) -> dict:
+    """Like rates on a grid: rows and columns are the most-swiped values (or the columns given).
+    A cell with fewer than GRID_MIN swipes has no rate: too few to mean anything."""
+    cells: dict[tuple[str, str], dict] = {}
+    for r in rows:
+        a, b = row_of(r), col_of(r)
+        if a and b:
+            d = cells.setdefault((a, b), {"n": 0, "liked": 0})
+            d["n"] += 1
+            d["liked"] += r["action"] not in NEGATIVE
+
+    def top(i: int, k: int) -> list[str]:
+        totals: dict[str, int] = {}
+        for key, d in cells.items():
+            totals[key[i]] = totals.get(key[i], 0) + d["n"]
+        return sorted(totals, key=lambda v: -totals[v])[:k]
+
+    rs, cs = top(0, GRID_ROWS), list(cols) if cols else top(1, GRID_COLS)
+    out = [[{"n": (d := cells.get((a, b), {"n": 0, "liked": 0}))["n"],
+             "rate": round(d["liked"] / d["n"], 2) if d["n"] >= GRID_MIN else None} for b in cs] for a in rs]
+    keep = [i for i, row in enumerate(out) if any(c["rate"] is not None for c in row)]   # a row of all gray says nothing
+    return {"rows": [rs[i] for i in keep], "cols": cs, "cells": [out[i] for i in keep]}
 
 
 def _brand_insights(rows, shoppers: dict, label) -> dict:
@@ -1180,28 +1228,13 @@ def _brand_insights(rows, shoppers: dict, label) -> dict:
             d["not_on"] += r["action"] == "noton"
     dresses = sorted(tried.items(), key=lambda kv: (-kv[1]["not_on"], -kv[1]["tries"]))[:6]
 
-    # Colour by undertone: like rates per colour, split by what Skin Tone Analysis read.
-    by_tone: dict[str, dict[str, dict]] = {}
-    for r in rows:
-        tone = shoppers[r["session"]]["undertone"] if r["session"] in shoppers else None
-        it = ALL.by_id.get(r["item_id"])
-        colour = it and it.tags.get("colour")
-        if tone in UNDERTONES and colour:
-            d = by_tone.setdefault(colour, {}).setdefault(tone, {"n": 0, "liked": 0})
-            d["n"] += 1
-            d["liked"] += r["action"] not in NEGATIVE
+    # Colour by undertone (YouCam Skin Tone Analysis), and silhouette by colour: like rates on a grid.
+    def tone(r):
+        sh = shoppers.get(r["session"])
+        return sh and sh["undertone"] in UNDERTONES and sh["undertone"]
 
-    def rate(d):
-        return round(d["liked"] / d["n"], 2) if d and d["n"] >= 3 else None
-
-    colours = []
-    for colour, tones in by_tone.items():
-        rates = {t: rate(tones.get(t)) for t in UNDERTONES}
-        known = [v for v in rates.values() if v is not None]
-        if len(known) >= 2:
-            colours.append({"label": colour, "gap": round(max(known) - min(known), 2),
-                            "tones": {t: {"rate": rates[t], "n": (tones.get(t) or {}).get("n", 0)} for t in UNDERTONES}})
-    colours.sort(key=lambda c: -c["gap"])
+    def tag(key):
+        return lambda r: (ALL.by_id[r["item_id"]].tags.get(key) if r["item_id"] in ALL.by_id else None)
 
     # Why shoppers pass: the dislikes Cupid's LLM concluded for each shopper, in its own words.
     why: dict[str, dict] = {}
@@ -1222,7 +1255,8 @@ def _brand_insights(rows, shoppers: dict, label) -> dict:
         "tryon": {"tries": sum(d["tries"] for d in tried.values()), "not_on": sum(d["not_on"] for d in tried.values()),
                   "dresses": [{"title": ALL.by_id[i].title, "image": f"/images/{ALL.by_id[i].image}", **d} for i, d in dresses]},
         "undertones": {t: sum(sh["undertone"] == t for sh in shoppers.values()) for t in UNDERTONES},
-        "by_undertone": colours[:6],
+        "undertone_map": _grid(rows, tag("colour"), tone, cols=UNDERTONES),
+        "style_map": _grid(rows, tag("silhouette"), tag("colour")),
         "profiled": profiled,
         "dislikes": [{"label": label(f), "shoppers": d["shoppers"], "why": d["why"]} for f, d in passes],
     }

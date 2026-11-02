@@ -93,3 +93,19 @@
 .exp-status { flex: none; width: 96px; font-size: 12px; font-weight: 700; color: var(--text-secondary); }
 .exp-status.confirmed { color: #006300; }
 .exp-status.rejected { color: #c0213f; }
+
+.back-link { font-size: 14px; font-weight: 600; color: var(--text-secondary); text-decoration: none; }
+
+/* Heatmaps: cells on a grid, 2px surface gaps, gray hatch where there's too little data */
+.hm { display: grid; gap: 2px; align-items: stretch; font-size: 12px; }
+.hm-col { text-align: center; color: var(--text-secondary); font-weight: 600; text-transform: capitalize; padding-bottom: 4px; align-self: end; }
+.hm-row { color: var(--text-secondary); font-weight: 600; text-transform: capitalize; padding-right: 10px; display: flex; align-items: center; white-space: nowrap; }
+.hm-cell { min-height: 34px; border-radius: 4px; display: grid; place-items: center; font-weight: 600; font-variant-numeric: tabular-nums; }
+.hm-cell.thin { background: repeating-linear-gradient(135deg, #f0efec 0 4px, #e6e5df 4px 6px); }
+.hm.mind .hm-cell { min-height: 22px; border-radius: 2px; }
+.hm-told { text-align: center; color: var(--accent); font-size: 11px; line-height: 14px; min-height: 14px; }
+.hm-x { text-align: center; color: var(--text-muted); font-size: 11px; padding-top: 4px; white-space: nowrap; overflow: visible; }
+.hm-legend { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12px; color: var(--text-secondary); margin-top: 10px; }
+.hm-legend i { width: 140px; height: 10px; border-radius: 3px; }
+.hm-legend .thin-key { display: inline-flex; align-items: center; gap: 6px; margin-left: 10px; color: var(--text-muted); }
+.hm-legend .thin-key .hm-cell { width: 14px; min-height: 14px; height: 14px; }

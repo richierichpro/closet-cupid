@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import './board.css'
 import Logo from './Logo'
-import { api, type Brand, type Report, type Undertone } from './api'
+import { api, type Brand, type Grid, type MindMap, type Report, type Undertone } from './api'
 
 type Tip = { x: number; y: number; text: string } | null
 type SetTip = (t: Tip) => void
@@ -34,9 +34,10 @@ export default function Board() {
         <Logo size={30} />
         <div className="live"><i /> Live analytics{live ? ` · ${live.goal}` : ''}</div>
         <div className="tabs">
-          <button className={tab === 'shopper' ? 'on' : ''} onClick={() => setTab('shopper')}>This shopper</button>
-          <button className={tab === 'brand' ? 'on' : ''} onClick={() => setTab('brand')}>For brands</button>
+          <button className={tab === 'shopper' ? 'on' : ''} onClick={() => setTab('shopper')}>Shopper insights</button>
+          <button className={tab === 'brand' ? 'on' : ''} onClick={() => setTab('brand')}>Brand insights</button>
         </div>
+        <a className="back-link" href="/">← Open the app</a>
       </div>
       {tab === 'shopper' && (live ? <Shopper r={live} setTip={setTip} /> : <div className="empty">Waiting for someone to swipe… open the app on a phone 📱</div>)}
       {tab === 'brand' && (brand && brand.swipes ? <BrandView b={brand} setTip={setTip} /> : <div className="empty">No swipes yet.</div>)}
@@ -79,6 +80,7 @@ function Shopper({ r, setTip }: { r: Report; setTip: SetTip }) {
       </div>
 
       <div className="grid2">
+        <MindPanel m={r.mind_map} setTip={setTip} />
         <Learned r={r} />
 
         <div className="panel">
@@ -243,10 +245,11 @@ function Learned({ r }: { r: Report }) {
 
 const TONES: Undertone[] = ['warm', 'neutral', 'cool']
 
-function BrandInsights({ b }: { b: Brand }) {
+function BrandInsights({ b, setTip }: { b: Brand; setTip: SetTip }) {
   const t = b.tryon
   return (
     <div className="grid2" style={{ marginBottom: 14 }}>
+      <StylePanel g={b.style_map} setTip={setTip} />
       <div className="panel">
         <h3>Loved on the model, not on them</h3>
         <div className="sub">
@@ -272,24 +275,10 @@ function BrandInsights({ b }: { b: Brand }) {
       <div className="panel">
         <h3>Colour, by skin undertone</h3>
         <div className="sub">
-          Share of right swipes per colour, split by the undertone YouCam Skin Tone Analysis read from each shopper's photo.
-          Biggest gaps first: who to make and show each shade for.
+          Share of right swipes per colour, split by the undertone YouCam Skin Tone Analysis read from each shopper's photo
+          ({TONES.map(x => `${b.undertones[x]} ${x}`).join(', ')}): which shades to make and show for whom.
         </div>
-        {b.by_undertone.length === 0
-          ? <div className="note">Needs shoppers with different undertones swiping the same colours (at least 3 swipes each).</div>
-          : (
-            <table className="cal">
-              <thead><tr><th>Colour</th>{TONES.map(x => <th key={x} style={{ textTransform: 'capitalize' }}>{x} ({b.undertones[x]})</th>)}</tr></thead>
-              <tbody>
-                {b.by_undertone.map(c => (
-                  <tr key={c.label}>
-                    <td style={{ textTransform: 'capitalize' }}>{c.label}</td>
-                    {TONES.map(x => <td key={x}>{c.tones[x].rate == null ? '–' : <><b>{pct(c.tones[x].rate)}</b> <span className="n">n={c.tones[x].n}</span></>}</td>)}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+        <Heatmap g={b.undertone_map} what="colour" setTip={setTip} />
       </div>
 
       <div className="panel">
@@ -319,7 +308,7 @@ function BrandView({ b, setTip }: { b: Brand; setTip: SetTip }) {
         <div className="tile"><div className="k">Swipes</div><div className="v">{b.swipes}</div><div className="s">each one a taste signal</div></div>
         <div className="tile"><div className="k">Browsing time captured</div><div className="v">{b.minutes} min</div><div className="s">turned into demand data</div></div>
       </div>
-      <BrandInsights b={b} />
+      <BrandInsights b={b} setTip={setTip} />
       <div className="grid2">
         <div className="panel">
           <h3>Most loved attributes</h3>
@@ -338,6 +327,108 @@ function BrandView({ b, setTip }: { b: Brand; setTip: SetTip }) {
 }
 
 /* ---------- charts ---------- */
+
+// Sequential blue ramp (like rate) and a blue ↔ red diverging scale (like ↔ dislike) around a neutral gray.
+const SEQ = ['#cde2fb', '#9ec5f4', '#6da7ec', '#3987e5', '#256abf', '#184f95', '#0d366b']
+const NEUTRAL = '#f0efec', LIKE = '#2a78d6', DISLIKE = '#e34948'
+const rgb = (h: string) => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16))
+const mix = (a: string, b: string, t: number) =>
+  `#${rgb(a).map((v, i) => Math.round(v + (rgb(b)[i] - v) * t).toString(16).padStart(2, '0')).join('')}`
+const seq = (t: number) => {
+  const x = Math.max(0, Math.min(1, t)) * (SEQ.length - 1), i = Math.min(SEQ.length - 2, Math.floor(x))
+  return mix(SEQ[i], SEQ[i + 1], x - i)
+}
+const div = (v: number) => mix(NEUTRAL, v >= 0 ? LIKE : DISLIKE, Math.min(1, Math.abs(v)))
+const inkOn = (h: string) => {
+  const [r, g, b] = rgb(h).map(c => c / 255)
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.45 ? '#0b0b0b' : '#ffffff'
+}
+const hover = (setTip: SetTip, text: string) => ({
+  onMouseMove: (e: React.MouseEvent) => setTip({ x: e.clientX, y: e.clientY, text }),
+  onMouseLeave: () => setTip(null),
+})
+
+// Like rate by two attributes: one blue ramp, gray where there are too few swipes to say.
+function Heatmap({ g, what, setTip }: { g: Grid; what: string; setTip: SetTip }) {
+  if (!g.rows.length) return <div className="note">No swipes on these yet.</div>
+  return (
+    <div className="chart">
+      <div className="hm" style={{ gridTemplateColumns: `minmax(84px, max-content) repeat(${g.cols.length}, minmax(44px, 1fr))` }}>
+        <span />
+        {g.cols.map(c => <span key={c} className="hm-col">{c}</span>)}
+        {g.rows.map((r, i) => [
+          <span key={r} className="hm-row">{r}</span>,
+          ...g.cols.map((c, j) => {
+            const cell = g.cells[i][j]
+            const fill = cell.rate == null ? undefined : seq(cell.rate)
+            const tip = cell.rate == null ? `${r} · ${c}: ${cell.n ? `only ${cell.n} swipe${cell.n === 1 ? '' : 's'}` : 'no swipes'}`
+              : `${r} · ${c}: ${pct(cell.rate)} liked (${cell.n} swipes)`
+            return (
+              <div key={`${r}-${c}`} className={`hm-cell ${fill ? '' : 'thin'}`} style={fill ? { background: fill, color: inkOn(fill) } : undefined}
+                aria-label={tip} {...hover(setTip, tip)}>
+                {cell.rate == null ? '' : pct(cell.rate)}
+              </div>
+            )
+          }),
+        ])}
+      </div>
+      <div className="hm-legend">
+        <span>0% liked</span><i style={{ background: `linear-gradient(90deg, ${SEQ.join(', ')})` }} /><span>100%</span>
+        <span className="thin-key"><b className="hm-cell thin" />fewer than 3 swipes</span>
+      </div>
+      <div className="note">Rows: {what}, most swiped first. Hover a cell for its count.</div>
+    </div>
+  )
+}
+
+function StylePanel({ g, setTip }: { g: Grid; setTip: SetTip }) {
+  return (
+    <div className="panel">
+      <h3>What sells: silhouette × colour</h3>
+      <div className="sub">Share of right swipes for each cut in each colour, pooled across every shopper. The darkest cells are the combinations to make more of.</div>
+      <Heatmap g={g} what="silhouette" setTip={setTip} />
+    </div>
+  )
+}
+
+// Cupid's mind, swipe by swipe: each row a belief, blue = it thinks you like it, red = you don't.
+function MindPanel({ m, setTip }: { m: MindMap; setTip: SetTip }) {
+  const n = m.swipes.length
+  const toldAt = new Map(m.told.map(t => [t.after + 1, t]))
+  return (
+    <div className="panel span2">
+      <h3>How Cupid's mind changed</h3>
+      <div className="sub">
+        What Cupid's LLM believed about this shopper after every swipe{n ? ` (swipes ${m.swipes[0]}–${m.swipes[n - 1]})` : ''}.
+        Watch beliefs appear, flip and firm up. ◆ marks where the shopper answered one of Cupid's this-or-thats.
+      </div>
+      {n === 0 ? <div className="note">Cupid's beliefs show up here after the first few swipes.</div> : (
+        <div className="chart">
+          <div className="hm mind" style={{ gridTemplateColumns: `minmax(110px, max-content) repeat(${n}, minmax(6px, 1fr))` }}>
+            <span />
+            {m.swipes.map(w => {
+              const t = toldAt.get(w)
+              return <span key={w} className="hm-told" {...(t ? hover(setTip, `You told Cupid: ${t.changes.join(', ')}`) : {})}>{t ? '◆' : ''}</span>
+            })}
+            {m.rows.map(r => [
+              <span key={r.label} className="hm-row">{r.label}</span>,
+              ...r.values.map((v, j) => {
+                const tip = `After swipe ${m.swipes[j]}: ${v > 0 ? `likes ${r.label}` : v < 0 ? `dislikes ${r.label}` : `no view on ${r.label}`}${v ? ` (${Math.round(Math.abs(v) * 100)}% sure)` : ''}`
+                return <div key={`${r.label}-${j}`} className="hm-cell" style={{ background: div(v) }} aria-label={tip} {...hover(setTip, tip)} />
+              }),
+            ])}
+            <span />
+            {m.swipes.map((w, j) => <span key={`x${w}`} className="hm-x">{j === 0 || j === n - 1 || w % 5 === 0 ? w : ''}</span>)}
+          </div>
+          <div className="hm-legend">
+            <span>Dislikes</span><i style={{ background: `linear-gradient(90deg, ${DISLIKE}, ${NEUTRAL}, ${LIKE})` }} /><span>Likes</span>
+            <span className="thin-key">gray = no opinion yet · columns = swipes</span>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
 
 function PairBars({ rounds, names, setTip }: { rounds: { label: string; a: number | null; b: number | null }[]; names: [string, string]; setTip: SetTip }) {
   const W = 460, H = 190, top = 14, bottom = 22, left = 30
