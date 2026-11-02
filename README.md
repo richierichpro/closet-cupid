@@ -106,6 +106,6 @@ npm run dev
 - **Board:** http://localhost:5173/board
 - **Keyboard:** ← pass, → like, ↑ super like, ↓ love it but too pricey, Backspace undo.
 
-The product catalogue, photos and try-on images live in `backend/data/` and aren't in the repo. Searches fill the catalogue as shoppers use the app. After building it, run `uv run python scripts/retag.py` to tag the catalogue's vibes.
+The dress catalogue ships with the code in `backend/data/`: about 2,000 dresses with photos, tags and fashion-model fingerprints, so the app works straight after cloning. Shoppers' photos and try-on images are never committed. New searches add dresses to the catalogue as shoppers use the app.
 
 See [backend/README.md](backend/README.md) for the pipeline and code map.
