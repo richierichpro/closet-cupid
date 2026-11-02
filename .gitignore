@@ -3,7 +3,11 @@
 __pycache__/
 *.pyc
 .pytest_cache/
-backend/data/
+# The catalogue ships with the code; shoppers' photos, try-ons and old backups never do.
+backend/data/*
+!backend/data/images/
+!backend/data/cupid.db
+!backend/data/vibes.npz
 node_modules/
 dist/
 .DS_Store

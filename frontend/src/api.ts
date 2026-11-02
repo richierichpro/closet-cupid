@@ -257,7 +257,8 @@ export const api = {
   answer: (sid: string, round: number, i: number, answer: 'a' | 'b' | 'neither') =>
     call<Question>(`/api/sessions/${sid}/questions/${round}/${i}`, { method: 'POST', body: JSON.stringify({ answer }) }),
   tryons: (sid: string) => call<Look[]>(`/api/sessions/${sid}/tryons`),
-  board: () => call<{ live: Report | null }>('/api/board'),
+  // One shopper's insights by session id; with none, whoever swiped most recently.
+  board: (sid?: string | null) => call<{ live: Report | null }>(`/api/board${sid ? `?session=${encodeURIComponent(sid)}` : ''}`),
   brand: () => call<Brand>('/api/brand'),
 }
 

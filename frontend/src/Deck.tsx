@@ -152,7 +152,7 @@ export default function Deck({ sid, onMatches, onRestart }: { sid: string; onMat
       <div className="topbar">
         <Logo />
         <div className="topbar-actions">
-          <a className="icon-btn" href="/board" target="_blank" rel="noopener" aria-label="Insights" title="Your insights and brand insights"><Chart size={18} /></a>
+          <a className="icon-btn" href={`/board?session=${sid}`} target="_blank" rel="noopener" aria-label="Insights" title="Your insights and brand insights"><Chart size={18} /></a>
           <button className="icon-btn" onClick={() => setChanging(true)} aria-label="Refine filters"><Sliders size={18} /></button>
           <button className="icon-btn" onClick={onMatches} aria-label={`Matches (${liked})`}>
             <Heart size={18} />{liked > 0 && <span className="count">{liked}</span>}

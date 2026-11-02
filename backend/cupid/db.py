@@ -60,6 +60,7 @@ CREATE TABLE IF NOT EXISTS shoppers (
     undertone  TEXT,
     has_photo  INTEGER NOT NULL DEFAULT 0,
     profile    TEXT,
+    report     TEXT,               -- their insights page, saved as it changes so it survives restarts
     updated    REAL NOT NULL
 );
 -- Listings merged into an existing item (same product, another seller).
@@ -76,6 +77,8 @@ def connect(path=DB_PATH) -> sqlite3.Connection:
     conn = sqlite3.connect(path, check_same_thread=False, timeout=30)
     conn.row_factory = sqlite3.Row
     conn.executescript(SCHEMA)
+    if "report" not in {r["name"] for r in conn.execute("PRAGMA table_info(shoppers)")}:   # databases made before it
+        conn.execute("ALTER TABLE shoppers ADD COLUMN report TEXT")
     return conn
 
 
@@ -129,6 +132,16 @@ def save_shopper(conn, session: str, occasion: str, undertone: str | None, has_p
 def save_profile(conn, session: str, profile: dict):
     conn.execute("UPDATE shoppers SET profile = ?, updated = ? WHERE session = ?", (json.dumps(profile), time.time(), session))
     conn.commit()
+
+
+def save_report(conn, session: str, report: dict):
+    conn.execute("UPDATE shoppers SET report = ?, updated = ? WHERE session = ?", (json.dumps(report), time.time(), session))
+    conn.commit()
+
+
+def get_report(conn, session: str) -> dict | None:
+    row = conn.execute("SELECT report FROM shoppers WHERE session = ?", (session,)).fetchone()
+    return json.loads(row["report"]) if row and row["report"] else None
 
 
 def all_shoppers(conn) -> list[sqlite3.Row]:

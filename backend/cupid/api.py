@@ -781,6 +781,7 @@ def _agent_learn(s: Session, item: Item, action: str, n: int):
                            "stance": {f: round(v, 2) for f, v in _stance(profile).items()}})
     with db_lock:
         db.save_profile(conn, s.id, profile)
+    _save_report(s)
     _event(s, "thought", profile["thought"])
 
 
@@ -873,6 +874,7 @@ def answer(sid: str, rnd: int, i: int, body: AnswerIn):
         s.thoughts.append({"n": s.cupid.n, "text": q["reply"], "by": "llm", "action": "told", "shift": TOLD,
                            "changes": changes, "item": {"image": shown["image"], "title": q["question"]},
                            "question": q["question"]})
+    _save_report(s)
     return q
 
 
@@ -1007,6 +1009,7 @@ def swipe(sid: str, body: SwipeIn):
             _go_shopping(s)
         if s.cupid.n % ROUND_SIZE == 0:
             result["payoff"] = _payoff(s)
+            s.worker.submit(_save_report, s)   # after the round's learning: its insights page, saved
         result["next"] = _deal(s)
     return result
 
@@ -1143,9 +1146,24 @@ def report(sid: str):
         return _report(s)
 
 
+def _save_report(s: Session):
+    """Keep a shopper's insights page in the database, so their link still works after a restart."""
+    with s.lock:
+        report = _report(s)
+    with db_lock:
+        db.save_report(conn, s.id, report)
+
+
 @app.get("/api/board")
-def board():
-    """The live board on the projector follows whoever swiped most recently."""
+def board(session: str | None = None):
+    """One shopper's insights (their own link), or, with no session, whoever swiped most recently (the projector)."""
+    if session:
+        s = SESSIONS.get(session)
+        if s and s.cupid.n:
+            with s.lock:
+                return {"live": _report(s)}
+        with db_lock:
+            return {"live": db.get_report(conn, session)}
     if not SESSIONS:
         return {"live": None}
     s = max(SESSIONS.values(), key=lambda x: x.last_active if x.cupid.n else 0)

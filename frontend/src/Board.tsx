@@ -14,32 +14,35 @@ export default function Board() {
   const [brand, setBrand] = useState<Brand | null>(null)
   const [tab, setTab] = useState<'shopper' | 'brand'>('shopper')
   const [tip, setTip] = useState<Tip>(null)
+  // A shopper's own link (from the app) shows their insights; the bare /board follows the latest swiper.
+  const [mine] = useState(() => new URLSearchParams(window.location.search).get('session'))
 
   useEffect(() => {
     let stop = false
     const tick = async () => {
       try {
-        const [b, br] = await Promise.all([api.board(), api.brand()])
+        const [b, br] = await Promise.all([api.board(mine), api.brand()])
         if (!stop) { setLive(b.live); setBrand(br) }
       } catch { /* API restarting; try again next tick */ }
     }
     tick()
     const id = setInterval(tick, 1500)
     return () => { stop = true; clearInterval(id) }
-  }, [])
+  }, [mine])
 
   return (
     <div className="board">
       <div className="board-head">
         <Logo size={30} />
-        <div className="live"><i /> Live analytics{live ? ` · ${live.goal}` : ''}</div>
+        <div className="live"><i /> {mine ? 'Your insights' : 'Live analytics'}{live ? ` · ${live.goal}` : ''}</div>
         <div className="tabs">
           <button className={tab === 'shopper' ? 'on' : ''} onClick={() => setTab('shopper')}>Shopper insights</button>
           <button className={tab === 'brand' ? 'on' : ''} onClick={() => setTab('brand')}>Brand insights</button>
         </div>
         <a className="back-link" href="/">← Open the app</a>
       </div>
-      {tab === 'shopper' && (live ? <Shopper r={live} setTip={setTip} /> : <div className="empty">Waiting for someone to swipe… open the app on a phone 📱</div>)}
+      {tab === 'shopper' && (live ? <Shopper r={live} setTip={setTip} />
+        : <div className="empty">{mine ? 'Your insights appear here after your first few swipes.' : 'Waiting for someone to swipe… open the app on a phone 📱'}</div>)}
       {tab === 'brand' && (brand && brand.swipes ? <BrandView b={brand} setTip={setTip} /> : <div className="empty">No swipes yet.</div>)}
       {tip && <div className="tip" style={{ left: tip.x, top: tip.y }}>{tip.text}</div>}
     </div>
