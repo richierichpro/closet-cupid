@@ -1,0 +1,34 @@
+# Render Blueprint: New → Blueprint → this repo. Render asks for the three keys; nothing secret lives here.
+services:
+  - type: web
+    name: closet-cupid
+    runtime: docker
+    plan: standard            # 2 GB: room for the fashion model that tags new dresses from Cupid's searches
+    region: singapore
+    healthCheckPath: /api/status
+    disk:
+      name: cupid-data        # the database, new dresses, photos, try-ons and the model cache: kept across deploys
+      mountPath: /var/data
+      sizeGB: 3
+    envVars:
+      - key: SERPAPI_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: YOUCAM_API_KEY
+        sync: false
+      - key: CUPID_DATA
+        value: /var/data
+      - key: HF_HOME
+        value: /var/data/hf
+      # Spending limits for a public link: past these, the feature pauses for the day.
+      - key: SERPAPI_DAILY_LIMIT
+        value: "100"
+      - key: LLM_SESSIONS_PER_DAY
+        value: "50"
+      - key: TRYONS_PER_SESSION
+        value: "5"
+      - key: TRYONS_PER_DAY
+        value: "40"
+      - key: PHOTOS_PER_DAY
+        value: "60"

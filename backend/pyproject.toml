@@ -18,6 +18,7 @@ dependencies = [
 # Only the catalogue builder needs the vision model; the engine runs without it.
 vision = [
     "torch>=2.4",
+    "torchvision",
     "open_clip_torch>=2.26",
     "transformers>=4.44",
     "sentencepiece>=0.2",
@@ -29,6 +30,16 @@ dev = ["pytest>=8.0"]
 
 [tool.uv]
 package = false
+
+# On Linux servers, the CPU-only PyTorch build: the CUDA one is gigabytes the server can't use.
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+torchvision = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

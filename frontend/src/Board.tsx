@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import './board.css'
 import Logo from './Logo'
-import { api, type Brand, type Grid, type MindMap, type Report, type Undertone } from './api'
+import { api, type MindMap, type Report } from './api'
 
 type Tip = { x: number; y: number; text: string } | null
 type SetTip = (t: Tip) => void
@@ -11,8 +11,6 @@ const ACTION_EMOJI = { like: '♥ Liked', crush: '★ Loved on me', nope: '✕ P
 
 export default function Board() {
   const [live, setLive] = useState<Report | null>(null)
-  const [brand, setBrand] = useState<Brand | null>(null)
-  const [tab, setTab] = useState<'shopper' | 'brand'>('shopper')
   const [tip, setTip] = useState<Tip>(null)
   // A shopper's own link (from the app) shows their insights; the bare /board follows the latest swiper.
   const [mine] = useState(() => new URLSearchParams(window.location.search).get('session'))
@@ -21,8 +19,8 @@ export default function Board() {
     let stop = false
     const tick = async () => {
       try {
-        const [b, br] = await Promise.all([api.board(mine), api.brand()])
-        if (!stop) { setLive(b.live); setBrand(br) }
+        const b = await api.board(mine)
+        if (!stop) setLive(b.live)
       } catch { /* API restarting; try again next tick */ }
     }
     tick()
@@ -34,16 +32,11 @@ export default function Board() {
     <div className="board">
       <div className="board-head">
         <Logo size={30} />
-        <div className="live"><i /> {mine ? 'Your insights' : 'Live analytics'}{live ? ` · ${live.goal}` : ''}</div>
-        <div className="tabs">
-          <button className={tab === 'shopper' ? 'on' : ''} onClick={() => setTab('shopper')}>Shopper insights</button>
-          <button className={tab === 'brand' ? 'on' : ''} onClick={() => setTab('brand')}>Brand insights</button>
-        </div>
+        <div className="live"><i /> {mine ? 'Your insights' : 'Insights'}{live ? ` · ${live.goal}` : ''}</div>
         <a className="back-link" href="/">← Open the app</a>
       </div>
-      {tab === 'shopper' && (live ? <Shopper r={live} setTip={setTip} />
-        : <div className="empty">{mine ? 'Your insights appear here after your first few swipes.' : 'Waiting for someone to swipe… open the app on a phone 📱'}</div>)}
-      {tab === 'brand' && (brand && brand.swipes ? <BrandView b={brand} setTip={setTip} /> : <div className="empty">No swipes yet.</div>)}
+      {live ? <Shopper r={live} setTip={setTip} />
+        : <div className="empty">{mine ? 'Your insights appear here after your first few swipes.' : 'Waiting for someone to swipe… open the app on a phone 📱'}</div>}
       {tip && <div className="tip" style={{ left: tip.x, top: tip.y }}>{tip.text}</div>}
     </div>
   )
@@ -246,153 +239,18 @@ function Learned({ r }: { r: Report }) {
   )
 }
 
-const TONES: Undertone[] = ['warm', 'neutral', 'cool']
-
-function BrandInsights({ b, setTip }: { b: Brand; setTip: SetTip }) {
-  const t = b.tryon
-  return (
-    <div className="grid2" style={{ marginBottom: 14 }}>
-      <StylePanel g={b.style_map} setTip={setTip} />
-      <div className="panel">
-        <h3>Loved on the model, not on them</h3>
-        <div className="sub">
-          Every super like is tried on the shopper's own photo with YouCam Clothes Try-On.
-          A "Not on me" is a return that never had to happen.
-        </div>
-        {t.tries === 0 ? <div className="note">No try-ons yet.</div> : (
-          <>
-            <p className="headline"><b>{t.not_on} of {t.tries}</b> try-ons rejected once shoppers saw it on themselves</p>
-            <div className="recent">
-              {t.dresses.map(d => (
-                <div key={d.image} className="r">
-                  <img src={d.image} alt={d.title} />
-                  <b>{d.tries} try-on{d.tries === 1 ? '' : 's'}</b>
-                  <span style={{ color: d.not_on ? '#c0213f' : '#006300' }}>{d.not_on ? `✕ ${d.not_on} not on me` : '★ loved on them'}</span>
-                </div>
-              ))}
-            </div>
-          </>
-        )}
-      </div>
-
-      <div className="panel">
-        <h3>Colour, by skin undertone</h3>
-        <div className="sub">
-          Share of right swipes per colour, split by the undertone YouCam Skin Tone Analysis read from each shopper's photo
-          ({TONES.map(x => `${b.undertones[x]} ${x}`).join(', ')}): which shades to make and show for whom.
-        </div>
-        <Heatmap g={b.undertone_map} what="colour" setTip={setTip} />
-      </div>
-
-      <div className="panel">
-        <h3>Why shoppers pass</h3>
-        <div className="sub">What Cupid's LLM concluded each shopper dislikes, pooled across {b.profiled} shopper{b.profiled === 1 ? '' : 's'}, in its own words.</div>
-        {b.dislikes.length === 0 ? <div className="note">No dislikes learned yet.</div> : (
-          <div className="why">
-            {b.dislikes.map(d => (
-              <div key={d.label} className="why-row">
-                <span className="belief no">{d.label}</span>
-                <span className="n">{d.shoppers} shopper{d.shoppers === 1 ? '' : 's'}</span>
-                <span className="quote">{d.why.map(w => `"${w}"`).join(' · ')}</span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
-function BrandView({ b, setTip }: { b: Brand; setTip: SetTip }) {
-  return (
-    <>
-      <div className="tiles">
-        <div className="tile hero"><div className="k">Shoppers</div><div className="v">{b.shoppers}</div><div className="s">pooled, never individual</div></div>
-        <div className="tile"><div className="k">Swipes</div><div className="v">{b.swipes}</div><div className="s">each one a taste signal</div></div>
-        <div className="tile"><div className="k">Browsing time captured</div><div className="v">{b.minutes} min</div><div className="s">turned into demand data</div></div>
-      </div>
-      <BrandInsights b={b} setTip={setTip} />
-      <div className="grid2">
-        <div className="panel">
-          <h3>Most loved attributes</h3>
-          <div className="sub">Share of swipes that were a like or crush (attributes seen at least 5 times).</div>
-          <HBars rows={b.loved.map(x => ({ label: x.label, value: x.like_rate, n: x.n }))} setTip={setTip} />
-        </div>
-        <div className="panel">
-          <h3>Where price blocks demand</h3>
-          <div className="sub">"Love it, too pricey" swipes: demand nobody is serving at that price.</div>
-          {b.too_pricey.length ? <HBars rows={b.too_pricey.map(x => ({ label: x.label, value: x.pricey_rate, n: x.n }))} setTip={setTip} />
-            : <div className="note">No "too pricey" swipes yet.</div>}
-        </div>
-      </div>
-    </>
-  )
-}
-
 /* ---------- charts ---------- */
 
-// Sequential blue ramp (like rate) and a blue ↔ red diverging scale (like ↔ dislike) around a neutral gray.
-const SEQ = ['#cde2fb', '#9ec5f4', '#6da7ec', '#3987e5', '#256abf', '#184f95', '#0d366b']
+// A blue ↔ red diverging scale (like ↔ dislike) around a neutral gray.
 const NEUTRAL = '#f0efec', LIKE = '#2a78d6', DISLIKE = '#e34948'
 const rgb = (h: string) => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16))
 const mix = (a: string, b: string, t: number) =>
   `#${rgb(a).map((v, i) => Math.round(v + (rgb(b)[i] - v) * t).toString(16).padStart(2, '0')).join('')}`
-const seq = (t: number) => {
-  const x = Math.max(0, Math.min(1, t)) * (SEQ.length - 1), i = Math.min(SEQ.length - 2, Math.floor(x))
-  return mix(SEQ[i], SEQ[i + 1], x - i)
-}
 const div = (v: number) => mix(NEUTRAL, v >= 0 ? LIKE : DISLIKE, Math.min(1, Math.abs(v)))
-const inkOn = (h: string) => {
-  const [r, g, b] = rgb(h).map(c => c / 255)
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.45 ? '#0b0b0b' : '#ffffff'
-}
 const hover = (setTip: SetTip, text: string) => ({
   onMouseMove: (e: React.MouseEvent) => setTip({ x: e.clientX, y: e.clientY, text }),
   onMouseLeave: () => setTip(null),
 })
-
-// Like rate by two attributes: one blue ramp, gray where there are too few swipes to say.
-function Heatmap({ g, what, setTip }: { g: Grid; what: string; setTip: SetTip }) {
-  if (!g.rows.length) return <div className="note">No swipes on these yet.</div>
-  return (
-    <div className="chart">
-      <div className="hm" style={{ gridTemplateColumns: `minmax(84px, max-content) repeat(${g.cols.length}, minmax(44px, 1fr))` }}>
-        <span />
-        {g.cols.map(c => <span key={c} className="hm-col">{c}</span>)}
-        {g.rows.map((r, i) => [
-          <span key={r} className="hm-row">{r}</span>,
-          ...g.cols.map((c, j) => {
-            const cell = g.cells[i][j]
-            const fill = cell.rate == null ? undefined : seq(cell.rate)
-            const tip = cell.rate == null ? `${r} · ${c}: ${cell.n ? `only ${cell.n} swipe${cell.n === 1 ? '' : 's'}` : 'no swipes'}`
-              : `${r} · ${c}: ${pct(cell.rate)} liked (${cell.n} swipes)`
-            return (
-              <div key={`${r}-${c}`} className={`hm-cell ${fill ? '' : 'thin'}`} style={fill ? { background: fill, color: inkOn(fill) } : undefined}
-                aria-label={tip} {...hover(setTip, tip)}>
-                {cell.rate == null ? '' : pct(cell.rate)}
-              </div>
-            )
-          }),
-        ])}
-      </div>
-      <div className="hm-legend">
-        <span>0% liked</span><i style={{ background: `linear-gradient(90deg, ${SEQ.join(', ')})` }} /><span>100%</span>
-        <span className="thin-key"><b className="hm-cell thin" />fewer than 3 swipes</span>
-      </div>
-      <div className="note">Rows: {what}, most swiped first. Hover a cell for its count.</div>
-    </div>
-  )
-}
-
-function StylePanel({ g, setTip }: { g: Grid; setTip: SetTip }) {
-  return (
-    <div className="panel">
-      <h3>What sells: silhouette × colour</h3>
-      <div className="sub">Share of right swipes for each cut in each colour, pooled across every shopper. The darkest cells are the combinations to make more of.</div>
-      <Heatmap g={g} what="silhouette" setTip={setTip} />
-    </div>
-  )
-}
 
 // Cupid's mind, swipe by swipe: each row a belief, blue = it thinks you like it, red = you don't.
 function MindPanel({ m, setTip }: { m: MindMap; setTip: SetTip }) {
@@ -527,26 +385,3 @@ function Taste({ items, setTip }: { items: Report['taste']; setTip: SetTip }) {
   )
 }
 
-function HBars({ rows, setTip }: { rows: { label: string; value: number; n: number }[]; setTip: SetTip }) {
-  const W = 460, row = 26, labelW = 130, valW = 44
-  const plot = W - labelW - valW
-  const H = rows.length * row + 4
-  return (
-    <div className="chart">
-      <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Attributes">
-        {rows.map((r, i) => {
-          const y = i * row + 4
-          const w = Math.max(r.value * plot, 2)
-          return (
-            <g key={r.label} onMouseMove={e => setTip({ x: e.clientX, y: e.clientY, text: `${r.label}: ${pct(r.value)} of ${r.n} swipes` })} onMouseLeave={() => setTip(null)}>
-              <rect x={0} y={y - 2} width={W} height={row} fill="transparent" />
-              <text x={labelW - 8} y={y + 13} textAnchor="end" style={{ fill: 'var(--text-secondary)', textTransform: 'capitalize' }}>{r.label}</text>
-              <rect x={labelW} y={y + 2} width={w} height={14} rx={4} fill="var(--series-1)" />
-              <text className="val" x={labelW + w + 6} y={y + 13}>{pct(r.value)}</text>
-            </g>
-          )
-        })}
-      </svg>
-    </div>
-  )
-}

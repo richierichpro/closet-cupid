@@ -88,29 +88,6 @@ export interface Report {
   llm: string | null
 }
 
-export interface Brand {
-  shoppers: number
-  swipes: number
-  minutes: number
-  loved: { label: string; like_rate: number; n: number }[]
-  too_pricey: { label: string; pricey_rate: number; n: number }[]
-  tryon: { tries: number; not_on: number; dresses: { title: string; image: string; tries: number; not_on: number }[] }
-  undertones: Record<Undertone, number>
-  undertone_map: Grid   // colour × the undertone YouCam Skin Tone Analysis read
-  style_map: Grid       // silhouette × colour
-  profiled: number
-  dislikes: { label: string; shoppers: number; why: string[] }[]
-}
-
-export type Undertone = 'warm' | 'neutral' | 'cool'
-
-// Like rates on a grid; rate is null when a cell has too few swipes to mean anything.
-export interface Grid {
-  rows: string[]
-  cols: string[]
-  cells: { rate: number | null; n: number }[][]
-}
-
 // What Cupid believed after each swipe: +1 sure they like it, −1 sure they don't.
 export interface MindMap {
   swipes: number[]
@@ -259,7 +236,6 @@ export const api = {
   tryons: (sid: string) => call<Look[]>(`/api/sessions/${sid}/tryons`),
   // One shopper's insights by session id; with none, whoever swiped most recently.
   board: (sid?: string | null) => call<{ live: Report | null }>(`/api/board${sid ? `?session=${encodeURIComponent(sid)}` : ''}`),
-  brand: () => call<Brand>('/api/brand'),
 }
 
 export const money = (n: number | null) =>

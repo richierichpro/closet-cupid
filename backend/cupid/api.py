@@ -20,13 +20,15 @@ from dataclasses import dataclass, field, replace
 
 import numpy as np
 from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from PIL import Image, ImageOps
 from pydantic import BaseModel
 
 from . import agent, amazon, catalogue, colours, db, faces, metrics, youcam
 from .amazon import ANSWER_FOR_CATEGORY, LOOKING_FOR, AmazonSearch, SerpError, answer_search, with_occasion
-from .config import DATA_DIR, IMAGE_DIR, SERPAPI_DAILY_LIMIT, VIBE_VECTORS
+from .config import (DATA_DIR, FRONTEND_DIST, IMAGE_DIR, LLM_SESSIONS_PER_DAY, PHOTOS_PER_DAY, SERPAPI_DAILY_LIMIT,
+                     TRYONS_PER_DAY, TRYONS_PER_SESSION, VIBE_VECTORS)
 from .engine import ACTIONS, NEGATIVE, ROUND_SIZE, TOLD, WARMUP, Cupid, Pool, Prediction, Stated, _LABELS
 from .item import Item
 from .tagging import VIBES, tags_from_title
@@ -239,6 +241,10 @@ def _analyse(photo: Photo):
 @app.post("/api/photo")
 def upload_photo(file: UploadFile = File(...)):
     """The shopper's photo. Analysis starts now, so it's ready by the end of onboarding."""
+    with db_lock:
+        if db.usage_last_24h(conn, "photo") >= PHOTOS_PER_DAY:
+            raise HTTPException(429, "Photo analysis is paused for today. Carry on without a photo, Cupid still learns your taste.")
+        db.record_usage(conn, "photo")
     try:
         img = ImageOps.exif_transpose(Image.open(file.file)).convert("RGB")
     except Exception:
@@ -293,6 +299,7 @@ class Session:
     shop_asks: int = 0
     asks: dict[int, dict] = field(default_factory=dict)    # round → Cupid's read on you and its yes/no questions
     answered: list[str] = field(default_factory=list)      # attributes the shopper settled by answering
+    llm: bool = False        # Cupid's Claude mind is on for this session (off past the daily limit)
     worker: ThreadPoolExecutor = field(default_factory=lambda: ThreadPoolExecutor(1))  # one LLM call at a time, in order
     lock: threading.Lock = field(default_factory=threading.Lock)
     last_active: float = field(default_factory=time.time)
@@ -447,6 +454,11 @@ def new_session(body: NewSession):
     stated = Stated(likes=goal["likes"] + likes + vibes, budget=budget,
                     reasons={f: f"{f.split(':')[1].capitalize()} vibe, as you asked" for f in vibes})
     s = Session(id=uuid.uuid4().hex[:10], cupid=Cupid(stated=stated), pool=Pool([]), goal=goal_id, picks=[pick])
+    if agent.available():
+        with db_lock:
+            s.llm = db.usage_last_24h(conn, "llm") < LLM_SESSIONS_PER_DAY
+            if s.llm:
+                db.record_usage(conn, "llm")
     s.photo = PHOTOS.get(body.photo_id or "")
     if s.photo:
         s.photo.done.wait(PHOTO_WAIT)
@@ -474,7 +486,7 @@ def new_session(body: NewSession):
 def session_info(sid: str):
     s = get_session(sid)
     return {"looking": [{"id": p.id, "label": p.deck_search.label} for p in s.picks], "swipes": s.cupid.n,
-            "goal": s.goal, "has_photo": s.photo is not None, "has_mind": agent.available()}
+            "goal": s.goal, "has_photo": s.photo is not None, "has_mind": s.llm}
 
 
 @app.post("/api/sessions/{sid}/looking")
@@ -624,7 +636,7 @@ def _go_shopping(s: Session):
     with db_lock:
         budget_left = db.calls_last_24h(conn) < SERPAPI_DAILY_LIMIT
     # Only ask the LLM when a new search could actually run; otherwise the rule's cached search will do.
-    if (agent.available() and s.profile and budget_left and s.live_used < LIVE_SEARCHES_PER_SESSION
+    if (s.llm and s.profile and budget_left and s.live_used < LIVE_SEARCHES_PER_SESSION
             and s.shop_asks < LIVE_SEARCHES_PER_SESSION):
         s.shop_asks += 1
         s.worker.submit(_agent_shop, s, s.picks[0])
@@ -971,7 +983,7 @@ def swipe(sid: str, body: SwipeIn):
         thought = _thought(item, record, pred, before, s.cupid.relative())
         s.thoughts.append({"n": record.n, "text": thought})
         s.history.append(f"{record.n + 1}. {agent.describe(item)} → {body.action}")
-        if agent.available():
+        if s.llm:
             s.worker.submit(_agent_learn, s, item, body.action, record.n)
             # Then, with what it just learned, it picks the next few cards before the queue runs dry.
             if s.cupid.n >= WARMUP - 1 and len(s.plan) <= 1 and not s.planning:
@@ -1045,13 +1057,20 @@ def try_on(sid: str, item_id: str):
     if not s.photo.file_id:
         raise HTTPException(503, f"Your photo couldn't be prepared for try-on ({s.photo.error or 'not ready'})")
     out = youcam.TRYON_DIR / f"{s.photo.path.stem}_{item.id}.jpg"
+    if not out.exists():
+        with db_lock:
+            if len(s.tryons) >= TRYONS_PER_SESSION:
+                raise HTTPException(429, f"That's {TRYONS_PER_SESSION} try-ons this session, the most per shopper. Keep swiping, Cupid keeps learning.")
+            if db.usage_last_24h(conn, "tryon") >= TRYONS_PER_DAY:
+                raise HTTPException(429, "Try-ons are paused for today. Keep swiping, Cupid keeps learning.")
+            db.record_usage(conn, "tryon")
     started = time.time()
     try:
         youcam.try_on(s.photo.file_id, IMAGE_DIR / item.image, out)
     except youcam.YouCamError as e:
         raise HTTPException(502, f"Try-on didn't work for this one ({e})")
     verdict = None
-    if agent.available():
+    if s.llm:
         try:
             verdict = agent.judge(s.profile, item, IMAGE_DIR / item.image, s.context, tryon=out)
         except agent.AgentError as e:
@@ -1133,7 +1152,7 @@ def _report(s: Session) -> dict:
         "mind_map": _mind_map(s),
         "experiments": s.experiments,
         "planned_shown": s.planned_shown,
-        "llm": agent.MODEL if agent.available() else None,
+        "llm": agent.MODEL if s.llm else None,
         "colouring": s.photo.colouring if s.photo else None,
         "tryons": len(s.tryons),
     }
@@ -1171,115 +1190,6 @@ def board(session: str | None = None):
         return {"live": _report(s) if s.cupid.n else None}
 
 
-@app.get("/api/brand")
-def brand():
-    """Pooled across every shopper: what's wanted, and where price blocks it."""
-    with db_lock:
-        rows = db.all_swipes(conn)
-        shoppers = {sh["session"]: sh for sh in db.all_shoppers(conn)}
-    stats: dict[str, dict] = {}
-    for r in rows:
-        it = ALL.by_id.get(r["item_id"])
-        if not it:
-            continue
-        for f in it.features:
-            d = stats.setdefault(f, {"n": 0, "liked": 0, "pricey": 0})
-            d["n"] += 1
-            d["liked"] += r["action"] not in NEGATIVE
-            d["pricey"] += r["action"] == "pricey"
-
-    def label(f):
-        key, value = f.split(":", 1)
-        return _LABELS.get(key, lambda v: v)(value)
-
-    solid = {f: d for f, d in stats.items() if d["n"] >= 5}
-    loved = sorted(solid.items(), key=lambda kv: -kv[1]["liked"] / kv[1]["n"])[:8]
-    blocked = sorted(((f, d) for f, d in solid.items() if d["pricey"]), key=lambda kv: -kv[1]["pricey"] / kv[1]["n"])[:6]
-    return {
-        "shoppers": len({r["session"] for r in rows}),
-        "swipes": len(rows),
-        "minutes": round(sum(r["dwell_ms"] for r in rows) / 60000, 1),
-        "loved": [{"label": label(f), "like_rate": round(d["liked"] / d["n"], 2), "n": d["n"]} for f, d in loved],
-        "too_pricey": [{"label": label(f), "pricey_rate": round(d["pricey"] / d["n"], 2), "n": d["n"]} for f, d in blocked],
-        **_brand_insights(rows, shoppers, label),
-    }
-
-
-UNDERTONES = ("warm", "neutral", "cool")
-GRID_ROWS, GRID_COLS, GRID_MIN = 8, 6, 3   # heatmap size; a cell needs this many swipes to show a rate
-
-
-def _grid(rows, row_of, col_of, cols: tuple[str, ...] | None = None) -> dict:
-    """Like rates on a grid: rows and columns are the most-swiped values (or the columns given).
-    A cell with fewer than GRID_MIN swipes has no rate: too few to mean anything."""
-    cells: dict[tuple[str, str], dict] = {}
-    for r in rows:
-        a, b = row_of(r), col_of(r)
-        if a and b:
-            d = cells.setdefault((a, b), {"n": 0, "liked": 0})
-            d["n"] += 1
-            d["liked"] += r["action"] not in NEGATIVE
-
-    def top(i: int, k: int) -> list[str]:
-        totals: dict[str, int] = {}
-        for key, d in cells.items():
-            totals[key[i]] = totals.get(key[i], 0) + d["n"]
-        return sorted(totals, key=lambda v: -totals[v])[:k]
-
-    rs, cs = top(0, GRID_ROWS), list(cols) if cols else top(1, GRID_COLS)
-    out = [[{"n": (d := cells.get((a, b), {"n": 0, "liked": 0}))["n"],
-             "rate": round(d["liked"] / d["n"], 2) if d["n"] >= GRID_MIN else None} for b in cs] for a in rs]
-    keep = [i for i, row in enumerate(out) if any(c["rate"] is not None for c in row)]   # a row of all gray says nothing
-    return {"rows": [rs[i] for i in keep], "cols": cs, "cells": [out[i] for i in keep]}
-
-
-def _brand_insights(rows, shoppers: dict, label) -> dict:
-    """What only Closet Cupid can tell a brand: how dresses look on real shoppers (YouCam try-on),
-    who likes which colour (YouCam skin tone), and why shoppers pass (Cupid's LLM profiles)."""
-    # Try-on gap: a super like means "I love it on the model"; the try-on shows it on them.
-    tried: dict[str, dict] = {}
-    for r in rows:
-        sh = shoppers.get(r["session"])
-        if r["action"] in ("crush", "noton") and sh and sh["has_photo"] and r["item_id"] in ALL.by_id:
-            d = tried.setdefault(r["item_id"], {"tries": 0, "not_on": 0})
-            d["tries"] += 1
-            d["not_on"] += r["action"] == "noton"
-    dresses = sorted(tried.items(), key=lambda kv: (-kv[1]["not_on"], -kv[1]["tries"]))[:6]
-
-    # Colour by undertone (YouCam Skin Tone Analysis), and silhouette by colour: like rates on a grid.
-    def tone(r):
-        sh = shoppers.get(r["session"])
-        return sh and sh["undertone"] in UNDERTONES and sh["undertone"]
-
-    def tag(key):
-        return lambda r: (ALL.by_id[r["item_id"]].tags.get(key) if r["item_id"] in ALL.by_id else None)
-
-    # Why shoppers pass: the dislikes Cupid's LLM concluded for each shopper, in its own words.
-    why: dict[str, dict] = {}
-    profiled = 0
-    for sh in shoppers.values():
-        if not sh["profile"]:
-            continue
-        profiled += 1
-        for b in json.loads(sh["profile"]).get("dislikes", []):
-            d = why.setdefault(b["attribute"], {"shoppers": 0, "strength": 0.0, "why": []})
-            d["shoppers"] += 1
-            d["strength"] += b["strength"]
-            if len(d["why"]) < 2 and b["why"] not in d["why"]:
-                d["why"].append(b["why"])
-    passes = sorted(why.items(), key=lambda kv: (-kv[1]["shoppers"], -kv[1]["strength"]))[:6]
-
-    return {
-        "tryon": {"tries": sum(d["tries"] for d in tried.values()), "not_on": sum(d["not_on"] for d in tried.values()),
-                  "dresses": [{"title": ALL.by_id[i].title, "image": f"/images/{ALL.by_id[i].image}", **d} for i, d in dresses]},
-        "undertones": {t: sum(sh["undertone"] == t for sh in shoppers.values()) for t in UNDERTONES},
-        "undertone_map": _grid(rows, tag("colour"), tone, cols=UNDERTONES),
-        "style_map": _grid(rows, tag("silhouette"), tag("colour")),
-        "profiled": profiled,
-        "dislikes": [{"label": label(f), "shoppers": d["shoppers"], "why": d["why"]} for f, d in passes],
-    }
-
-
 @app.get("/api/status")
 def status():
     with db_lock:
@@ -1287,3 +1197,17 @@ def status():
     return {"items": len(ALL.items), "sessions": len(SESSIONS), "serpapi_calls_24h": used,
             "fashion_model_loaded": _encoder is not None, "llm": agent.MODEL if agent.available() else None,
             "youcam": bool(youcam.YOUCAM_API_KEY)}
+
+
+# ---------- the app itself ----------
+
+if FRONTEND_DIST.is_dir():
+    @app.get("/{path:path}", include_in_schema=False)
+    def frontend(path: str):
+        """The built app: its files as they are, and every other page (/, /board) to the one-page app."""
+        if path.startswith("api/"):
+            raise HTTPException(404, "not found")
+        f = (FRONTEND_DIST / path).resolve()
+        if path and f.is_file() and FRONTEND_DIST.resolve() in f.parents:
+            return FileResponse(f)
+        return FileResponse(FRONTEND_DIST / "index.html")

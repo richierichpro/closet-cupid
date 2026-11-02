@@ -16,9 +16,6 @@
 .board-head { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; justify-content: space-between; margin-bottom: 20px; }
 .board-head .live { display: flex; align-items: center; gap: 8px; font-weight: 600; color: var(--text-secondary); }
 .board-head .live i { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); animation: pulse 1s ease-in-out infinite alternate; }
-.tabs { display: flex; gap: 6px; background: white; padding: 4px; border-radius: 999px; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
-.tabs button { padding: 8px 16px; border-radius: 999px; font-weight: 600; font-size: 14px; color: var(--text-secondary); }
-.tabs button.on { background: var(--ink); color: white; }
 
 .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; margin-bottom: 18px; }
 .tile { background: var(--surface-1); border-radius: 18px; padding: 16px 18px; box-shadow: 0 0 0 1px var(--ring); }
@@ -98,10 +95,8 @@
 
 /* Heatmaps: cells on a grid, 2px surface gaps, gray hatch where there's too little data */
 .hm { display: grid; gap: 2px; align-items: stretch; font-size: 12px; }
-.hm-col { text-align: center; color: var(--text-secondary); font-weight: 600; text-transform: capitalize; padding-bottom: 4px; align-self: end; }
 .hm-row { color: var(--text-secondary); font-weight: 600; text-transform: capitalize; padding-right: 10px; display: flex; align-items: center; white-space: nowrap; }
 .hm-cell { min-height: 34px; border-radius: 4px; display: grid; place-items: center; font-weight: 600; font-variant-numeric: tabular-nums; }
-.hm-cell.thin { background: repeating-linear-gradient(135deg, #f0efec 0 4px, #e6e5df 4px 6px); }
 .hm.mind .hm-cell { min-height: 22px; border-radius: 2px; }
 .hm-told { text-align: center; color: var(--accent); font-size: 11px; line-height: 14px; min-height: 14px; }
 .hm-x { text-align: center; color: var(--text-muted); font-size: 11px; padding-top: 4px; white-space: nowrap; overflow: visible; }

@@ -42,7 +42,7 @@ CREATE TABLE IF NOT EXISTS api_calls (
     ts     REAL NOT NULL,
     query  TEXT NOT NULL
 );
--- Every swipe from every session: feeds the brand view of the analytics board.
+-- Every swipe from every session.
 CREATE TABLE IF NOT EXISTS swipes (
     session   TEXT NOT NULL,
     item_id   TEXT NOT NULL,
@@ -52,8 +52,8 @@ CREATE TABLE IF NOT EXISTS swipes (
     slot      TEXT NOT NULL,
     ts        REAL NOT NULL
 );
--- One row per shopper: what YouCam read from their photo and what Cupid's LLM concluded
--- about them. Pooled in the brand view, never shown individually.
+-- One row per shopper: what YouCam read from their photo, what Cupid's LLM concluded
+-- about them, and their insights page.
 CREATE TABLE IF NOT EXISTS shoppers (
     session    TEXT PRIMARY KEY,
     occasion   TEXT,
@@ -62,6 +62,11 @@ CREATE TABLE IF NOT EXISTS shoppers (
     profile    TEXT,
     report     TEXT,               -- their insights page, saved as it changes so it survives restarts
     updated    REAL NOT NULL
+);
+-- Paid calls other than SerpAPI (Claude sessions, YouCam try-ons and photo analyses), for the daily limits.
+CREATE TABLE IF NOT EXISTS usage (
+    ts    REAL NOT NULL,
+    kind  TEXT NOT NULL
 );
 -- Listings merged into an existing item (same product, another seller).
 CREATE TABLE IF NOT EXISTS aliases (
@@ -117,10 +122,6 @@ def delete_last_swipe(conn, session: str):
     conn.commit()
 
 
-def all_swipes(conn) -> list[sqlite3.Row]:
-    return conn.execute("SELECT * FROM swipes").fetchall()
-
-
 def save_shopper(conn, session: str, occasion: str, undertone: str | None, has_photo: bool):
     conn.execute(
         "INSERT OR REPLACE INTO shoppers (session, occasion, undertone, has_photo, updated) VALUES (?, ?, ?, ?, ?)",
@@ -134,6 +135,15 @@ def save_profile(conn, session: str, profile: dict):
     conn.commit()
 
 
+def record_usage(conn, kind: str):
+    conn.execute("INSERT INTO usage (ts, kind) VALUES (?, ?)", (time.time(), kind))
+    conn.commit()
+
+
+def usage_last_24h(conn, kind: str) -> int:
+    return conn.execute("SELECT COUNT(*) FROM usage WHERE kind = ? AND ts > ?", (kind, time.time() - 86400)).fetchone()[0]
+
+
 def save_report(conn, session: str, report: dict):
     conn.execute("UPDATE shoppers SET report = ?, updated = ? WHERE session = ?", (json.dumps(report), time.time(), session))
     conn.commit()
@@ -142,10 +152,6 @@ def save_report(conn, session: str, report: dict):
 def get_report(conn, session: str) -> dict | None:
     row = conn.execute("SELECT report FROM shoppers WHERE session = ?", (session,)).fetchone()
     return json.loads(row["report"]) if row and row["report"] else None
-
-
-def all_shoppers(conn) -> list[sqlite3.Row]:
-    return conn.execute("SELECT * FROM shoppers").fetchall()
 
 
 def item_exists(conn, item_id: str) -> bool:

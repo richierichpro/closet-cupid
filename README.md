@@ -38,14 +38,11 @@ Built for the **YouCam API Skin AI & eCommerce VTO Hackathon** (Perfect Corp).
 - **Liked:** everything you swiped right on.
 - **Tried on you:** every dress you tried on, with Cupid's verdict on how it looks on you.
 
-**8. The board** (`/board`), a live analytics screen for a laptop or projector:
-- **Shopper tab:**
-  - how Cupid learned you: its turning points, its experiments, the searches it ran and why
-  - how accurate it was from the first round to the last, measured against a random control group
-- **Brand tab:** insights only possible with try-on and skin AI:
-  - dresses shoppers love on the model but reject on themselves
-  - colour preference by skin undertone
-  - why shoppers pass
+**8. Insights** (tap **Insights** in the app, or open `/board`):
+- **How Cupid's mind changed:** a heatmap of what Cupid believed after every swipe. You can watch beliefs appear, flip and firm up, with your this-or-that answers marked.
+- **How Cupid learned you:** the swipes that changed its mind, its experiments, and the searches it ran and why.
+- **Does it learn?** Its accuracy from the first round to the last, measured against a random control group.
+- Each shopper gets their own insights link, saved so it still works later.
 
 ---
 
@@ -53,7 +50,7 @@ Built for the **YouCam API Skin AI & eCommerce VTO Hackathon** (Perfect Corp).
 
 | YouCam API | Where | What it does in the app |
 |---|---|---|
-| **Skin Tone Analysis** | Onboarding selfie | Undertone and contrast, which feed Cupid's colour judgement and the brand board's undertone insights |
+| **Skin Tone Analysis** | Onboarding selfie | Undertone and contrast, which feed Cupid's colour judgement |
 | **Clothes Virtual Try-On** (`cloth-v4`) | Super like | Renders the shopper wearing the dress. Claude then judges the try-on image itself, not just the product photo |
 
 Try-ons are part of how Cupid learns, not a gimmick. A super like is confirmed or rejected *on you*, and that verdict teaches Cupid something a swipe can't: the style appealed, but it doesn't work on you.

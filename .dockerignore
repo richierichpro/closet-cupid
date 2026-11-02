@@ -1,0 +1,13 @@
+# Keys, shoppers' photos and try-ons never go into the image.
+**/.env
+backend/data/photos
+backend/data/tryon
+backend/data/google_shopping_backup
+backend/data/*.before-*
+**/node_modules
+**/.venv
+**/__pycache__
+**/.pytest_cache
+frontend/dist
+.git
+.DS_Store
