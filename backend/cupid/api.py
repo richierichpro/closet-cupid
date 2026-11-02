@@ -977,7 +977,8 @@ def swipe(sid: str, body: SwipeIn):
             rnd = s.cupid.n // ROUND_SIZE + 1
             if s.cupid.n % ROUND_SIZE == ASK_AT and rnd not in s.asks:
                 s.asks[rnd] = {"status": "thinking", "read": None, "questions": []}
-                s.worker.submit(_agent_interview, s, rnd)
+                # Its own thread: behind a fast swiper's queue of learn and plan calls it would miss the round's end.
+                threading.Thread(target=_agent_interview, args=(s, rnd), daemon=True).start()
         s.seen.add(item.id)
         s.current = None
         with db_lock:
