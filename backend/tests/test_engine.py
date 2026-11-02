@@ -23,7 +23,9 @@ def make_item(item_id, tags, price=1200, emb=None):
 def test_learning_beats_its_starting_point_and_a_random_feed(pool):
     persona = PERSONAS["two tastes"]   # no stated preferences, so it starts from zero
     gains, deck_vs_random = [], []
-    for seed in range(3):
+    # Six shoppers, not three: the engine's set ordering follows Python's per-run hash seed,
+    # so a single run's margin wobbles; the average over six holds whatever the seed.
+    for seed in range(6):
         cupid, result = run_session(persona, pool, swipes=100, seed=seed)
         gains.append(result["curve"][-1]["pick_right"] - result["curve"][0]["pick_right"])
         rand, _ = run_session(persona, pool, swipes=100, seed=seed, feed="random")
