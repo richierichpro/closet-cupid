@@ -33,8 +33,6 @@ from .tagging import VIBES, tags_from_title
 
 LIVE_SEARCHES_PER_SESSION = 2  # Cupid's own searches; first searches for an answer are separate
 SHOP_OPTIONS = 12              # filter options per group offered to Cupid's LLM when it shops
-DATES_PER_ROUND = 4           # dresses Cupid tries on you by itself after each round
-DATE_ROUNDS = 3               # rounds with dates per session: at most 12 YouCam try-ons
 ALIKE = {"like": 1, "pricey": 1, "crush": 2}   # look-alikes of a dress you loved, shown in the next cards
 ASK_AT = ROUND_SIZE - 2       # Cupid writes its end-of-round read and questions 2 swipes early, so they're ready
 CACHED_PAGES = 3               # later pages of a search join the deck if prefetched
@@ -293,8 +291,6 @@ class Session:
     planning: bool = False
     planned_shown: int = 0
     shop_asks: int = 0
-    dates: list[dict] = field(default_factory=list)       # each round: the dresses Cupid tried on you, and its verdicts
-    date_looks: dict[str, str] = field(default_factory=dict)  # item id → try-on image of the shopper wearing it
     asks: dict[int, dict] = field(default_factory=dict)    # round → Cupid's read on you and its yes/no questions
     answered: list[str] = field(default_factory=list)      # attributes the shopper settled by answering
     worker: ThreadPoolExecutor = field(default_factory=lambda: ThreadPoolExecutor(1))  # one LLM call at a time, in order
@@ -529,13 +525,11 @@ def _card(s: Session, item: Item, slot: str, pred: Prediction, bet: str | None =
         "match": round(pred.p * 100), "slot": slot, "bet": bet,
         "line": pick["why"] if pick else _line(s, item, slot, pred, bet),
         "pick": {"purpose": pick["purpose"], "label": pick["label"], "of": pick.get("of")} if pick else None,
-        "tryon": s.date_looks.get(item.id),
         "green": green, "red": red, "tags": item.tags,
     }
 
 
-PURPOSE_SLOT = {"best": "best", "test": "test", "surprise": "wild", "date": "best", "alike": "best"}
-URGENT = ("date", "alike")   # dresses it tried on you, and look-alikes of one you just loved: these jump the queue
+PURPOSE_SLOT = {"best": "best", "test": "test", "surprise": "wild", "alike": "best"}
 
 
 def _from_plan(s: Session) -> tuple[Item, dict] | None:
@@ -553,14 +547,13 @@ def _wide(s: Session) -> Pool:
 
 
 def _queue_alikes(s: Session, item: Item, k: int):
-    """You loved a dress: its closest look-alikes come next, right after any dresses Cupid tried on you.
+    """You loved a dress: its closest look-alikes come next.
     Like one of those too and it brings its own look-alikes, so Cupid leans in for as long as you do."""
     found = s.cupid.lookalikes(_wide(s), s.seen | {p["id"] for p in s.plan}, item, k)
     new = [it for it in found if it.id not in s.pool.by_id]
     if new:
         s.pool = Pool(s.pool.items + new)
-    at = next((i for i, p in enumerate(s.plan) if p["purpose"] != "date"), len(s.plan))
-    s.plan[at:at] = [{"id": it.id, "purpose": "alike", "label": "Like the one you loved",
+    s.plan[:0] = [{"id": it.id, "purpose": "alike", "label": "Like the one you loved",
                       "why": "Looks like a dress you loved", "from": item.id, "of": f"/images/{item.image}"}
                      for it in found]
 
@@ -574,8 +567,8 @@ def _deal(s: Session) -> dict | None:
         pick = None
         # Cupid's LLM chooses the cards, apart from the warm-up and the random control group
         # it's measured against. Until its first plan arrives, the engine's choice stands.
-        # Dresses it tried on you, and look-alikes of one you just loved, always come first.
-        urgent = bool(s.plan) and s.plan[0]["purpose"] in URGENT
+        # Look-alikes of a dress you just loved always come first.
+        urgent = bool(s.plan) and s.plan[0]["purpose"] == "alike"
         if urgent or slot not in ("warmup", "random"):
             planned = _from_plan(s)
             if planned:
@@ -707,15 +700,13 @@ def _launch(s: Session, pick: Pick, search: AmazonSearch, why: str | None = None
 
 
 def _payoff(s: Session) -> dict:
-    """End of a round: what you liked, your type, and what Cupid went shopping for.
-    Its read on you, its questions and its dates arrive by their own endpoints."""
+    """End of a round: what you liked, and your type. Cupid's read on you and its questions arrive by their own endpoint."""
     log = s.cupid.log[-ROUND_SIZE:]
     return {
         "round": s.cupid.n // ROUND_SIZE,
         "liked": sum(x.liked for x in log),
         "swipes": len(log),
         "your_type": s.cupid.your_type(),
-        "cupid_search": next((x for x in reversed(s.searches) if x["by"] == "cupid"), None),
     }
 
 
@@ -792,69 +783,6 @@ def _agent_learn(s: Session, item: Item, action: str, n: int):
     _event(s, "thought", profile["thought"])
 
 
-def _go_on_dates(s: Session):
-    """Cupid goes on dates for you: after a round it picks a few dresses you haven't seen
-    (its own Amazon finds first), tries each one on your photo with YouCam, looks at every
-    result with Claude, and keeps only the ones that work on you. Those open the next round."""
-    if not (s.photo and s.photo.file_id and agent.available()) or len(s.dates) >= DATE_ROUNDS:
-        return
-    dated = {t["id"] for d in s.dates for t in d["tried"]}
-    shortlist = s.cupid.shortlist(s.pool, s.seen | dated | {p["id"] for p in s.plan}, must=s.shopped - s.seen)
-    # Mostly its best bets (its own Amazon finds first), plus the one it's least sure about:
-    # a stylist tries a risky option too, and the try-on settles it.
-    best = sorted(shortlist, key=lambda ip: (ip[0].id not in s.shopped, -ip[1].p))[:DATES_PER_ROUND - 1]
-    rest = [ip for ip in shortlist if ip not in best]
-    chosen = best + sorted(rest, key=lambda ip: abs(ip[1].p - 0.5))[:1]
-    if not chosen:
-        return
-    date = {"round": s.cupid.n // ROUND_SIZE, "status": "trying",
-            "tried": [{"id": it.id, "title": it.title, "image": f"/images/{it.image}", "found": it.id in s.shopped,
-                       "tryon": None, "verdict": None, "error": None} for it, _ in chosen]}
-    s.dates.append(date)
-    photo, profile, ctx, at = s.photo, s.profile, dict(s.context), s.cupid.n
-
-    def one(entry: dict, item: Item):
-        out = youcam.TRYON_DIR / f"{photo.path.stem}_{item.id}.jpg"
-        try:
-            youcam.try_on(photo.file_id, IMAGE_DIR / item.image, out)
-            with s.lock:
-                entry["tryon"], entry["at"] = f"/tryon/{out.name}", time.time()
-            verdict = agent.judge(profile, item, IMAGE_DIR / item.image, ctx, tryon=out)
-        except (youcam.YouCamError, agent.AgentError) as e:
-            with s.lock:
-                entry["error"] = str(e)
-            return
-        with s.lock:
-            entry["verdict"] = verdict
-            if verdict["verdict"] == "match":
-                s.date_looks[item.id] = entry["tryon"]
-
-    def run():
-        with ThreadPoolExecutor(DATES_PER_ROUND) as pool:
-            list(pool.map(one, date["tried"], [it for it, _ in chosen]))
-        kept = [t for t in date["tried"] if (t["verdict"] or {}).get("verdict") == "match"]
-        with s.lock:
-            date["status"] = "done"
-            s.plan[:0] = [{"id": t["id"], "purpose": "date", "label": "Tried on you",
-                           "why": t["verdict"]["reason"]} for t in kept]
-            # Still on the round's end screen: the card dealt there gives way to the dates.
-            if kept and s.current and s.cupid.n == at:
-                bumped, s.current = s.current, None
-                if bumped.get("pick"):   # Cupid's own choice comes right after the dates
-                    s.plan.insert(len(kept), bumped["pick"])
-        _event(s, "dates", f"Cupid went on {len(date['tried'])} dates for you. "
-                           f"{len(kept)} {'works' if len(kept) == 1 else 'work'} on you.")
-
-    threading.Thread(target=run, daemon=True).start()
-
-
-@app.get("/api/sessions/{sid}/dates")
-def dates(sid: str):
-    s = get_session(sid)
-    with s.lock:
-        return s.dates
-
-
 PAIR_SIDE = 12   # best-rated dresses on each side of a this-or-that, paired by how alike they look
 
 
@@ -884,7 +812,7 @@ def _agent_interview(s: Session, rnd: int):
     try:
         out = agent.interview(s.profile, s.context, s.history, s.experiments, options, answered)
     except agent.AgentError:
-        ask["status"] = "done"   # no read, no questions: the round's end shows the dates alone
+        ask["status"] = "done"   # no read, no questions: the round's end falls back to your type
         return
     questions, used = [], set()
     with s.lock:
@@ -949,18 +877,16 @@ def answer(sid: str, rnd: int, i: int, body: AnswerIn):
 
 @app.get("/api/sessions/{sid}/tryons")
 def tried_on(sid: str):
-    """Every dress the shopper has seen on themselves, newest first: their super likes and Cupid's dates."""
+    """Every dress the shopper has tried on (their super likes), newest first, with Cupid's verdict on each."""
     s = get_session(sid)
     with s.lock:
-        looks = [(t["at"], t["item"], t["tryon"], s.verdicts.get(t["item"]), "you") for t in s.tryons if t.get("tryon")]
-        looks += [(t["at"], t["id"], t["tryon"], t["verdict"], "cupid")
-                  for d in s.dates for t in d["tried"] if t.get("at")]
+        looks = [(t["item"], t["tryon"], s.verdicts.get(t["item"])) for t in reversed(s.tryons) if t.get("tryon")]
     out = []
-    for _, item_id, tryon, verdict, by in sorted(looks, key=lambda x: -x[0]):
+    for item_id, tryon, verdict in looks:
         item = ALL.by_id.get(item_id)
         if item:
             out.append({"id": item.id, "title": item.title, "price": item.price, "link": item.link,
-                        "image": f"/images/{item.image}", "tryon": tryon, "by": by,
+                        "image": f"/images/{item.image}", "tryon": tryon,
                         "verdict": verdict if verdict and "verdict" in verdict else None})
     return out
 
@@ -1078,7 +1004,6 @@ def swipe(sid: str, body: SwipeIn):
             result["early_refresh"] = True
             _go_shopping(s)
         if s.cupid.n % ROUND_SIZE == 0:
-            _go_on_dates(s)
             result["payoff"] = _payoff(s)
         result["next"] = _deal(s)
     return result
@@ -1127,8 +1052,7 @@ def try_on(sid: str, item_id: str):
         except agent.AgentError as e:
             verdict = {"error": str(e)}
     with s.lock:
-        s.tryons.append({"item": item.id, "seconds": round(time.time() - started, 1),
-                         "tryon": f"/tryon/{out.name}", "at": time.time()})
+        s.tryons.append({"item": item.id, "seconds": round(time.time() - started, 1), "tryon": f"/tryon/{out.name}"})
         if verdict and "verdict" in verdict:
             s.verdicts[item.id] = verdict
         card = _card(s, item, "tryon", s.cupid.predict(item))
@@ -1144,9 +1068,8 @@ def matches(sid: str):
         order = sorted(liked, key=lambda x: (x.action != "crush", -x.n))
         items = [ALL.by_id[x.item_id] for x in order if x.item_id in ALL.by_id]
         preds = s.cupid.predict_many(items) if items else []
-        # The dresses they've seen on themselves show that way here too.
+        # The dresses they tried on show that way here too.
         looks = {t["item"]: t["tryon"] for t in s.tryons if t.get("tryon")}
-        looks |= {t["id"]: t["tryon"] for d in s.dates for t in d["tried"] if t.get("tryon")}
         return [dict(_card(s, it, "match", p), action=x.action, verdict=s.verdicts.get(it.id), tryon=looks.get(it.id))
                 for it, p, x in zip(items, preds, order)]
 
@@ -1183,7 +1106,6 @@ def _report(s: Session) -> dict:
         "profile": s.profile,
         "experiments": s.experiments,
         "planned_shown": s.planned_shown,
-        "dates": s.dates,
         "llm": agent.MODEL if agent.available() else None,
         "colouring": s.photo.colouring if s.photo else None,
         "tryons": len(s.tryons),

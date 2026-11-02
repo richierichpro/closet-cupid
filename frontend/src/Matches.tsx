@@ -57,13 +57,13 @@ function Liked({ items }: { items: Card[] | null }) {
   ))}</>
 }
 
-// Every dress seen on you: your super likes and the dates Cupid went on for you, newest first.
+// Every dress you tried on with a super like, newest first, with Cupid's verdict.
 function Tried({ looks }: { looks: Look[] | null }) {
   if (looks === null) return <div className="center" style={{ paddingTop: 80 }}><div className="spinner" /></div>
   if (looks.length === 0) return (
     <div className="empty">
       <p style={{ fontWeight: 600, color: 'var(--ink)' }}>Nothing tried on yet</p>
-      <p>Super like a dress to try it on, or finish a round and Cupid will try a few on you.</p>
+      <p>Super like a dress to try it on, and every look you try lands here.</p>
     </div>
   )
   return (
@@ -71,10 +71,9 @@ function Tried({ looks }: { looks: Look[] | null }) {
       {looks.map(l => {
         const v = l.verdict
         return (
-          <div key={`${l.by}-${l.id}`} className={`date-card ${v ? (v.verdict === 'match' ? 'kept' : 'passed') : ''}`}>
+          <div key={l.id} className={`date-card ${v ? (v.verdict === 'match' ? 'kept' : 'passed') : ''}`}>
             <div className="ph">
               <img src={l.tryon} alt={l.title} loading="lazy" />
-              <span className="by">{l.by === 'you' ? 'Your super like' : "Cupid's date"}</span>
             </div>
             <div className="res">
               {v && <><b>{v.verdict === 'match' ? '✓ Works on you' : '✕ Not on you'}</b>{v.reason}</>}

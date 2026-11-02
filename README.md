@@ -32,15 +32,11 @@ Built for the **YouCam API Skin AI & eCommerce VTO Hackathon** (Perfect Corp).
 
 **6. End of each round (12 swipes):**
 - **Here's what I learned:** Cupid's one-line read on your taste.
-- **This or that:** two real dresses that look alike except for the one thing Cupid can't work out (sleeveless vs long sleeve, fit-and-flare vs bodycon). One tap teaches it more than ten swipes.
-- **Cupid went on dates for you:**
-  - It picks 4 dresses you haven't seen and tries each one on your photo with **YouCam Try-On**, in parallel.
-  - Claude judges each try-on: ✓ *Works on you* or ✕ *Not on you*, with the reason.
-  - The dresses that pass open your next round, shown on you.
+- **This or that:** two real dresses that look alike except for the one thing Cupid can't work out (sleeveless vs long sleeve, fit-and-flare vs bodycon). One tap teaches it more than ten swipes. Tap **Neither** if both are wrong.
 
 **7. Matches.**
 - **Liked:** everything you swiped right on.
-- **Tried on you:** every try-on, both your super likes and Cupid's dates, with its verdict.
+- **Tried on you:** every dress you tried on, with Cupid's verdict on how it looks on you.
 
 **8. The board** (`/board`), a live analytics screen for a laptop or projector:
 - **Shopper tab:**
@@ -58,9 +54,9 @@ Built for the **YouCam API Skin AI & eCommerce VTO Hackathon** (Perfect Corp).
 | YouCam API | Where | What it does in the app |
 |---|---|---|
 | **Skin Tone Analysis** | Onboarding selfie | Undertone and contrast, which feed Cupid's colour judgement and the brand board's undertone insights |
-| **Clothes Virtual Try-On** (`cloth-v4`) | Super like, and Cupid's dates | Renders the shopper wearing the dress. Claude then judges the try-on image itself, not just the product photo |
+| **Clothes Virtual Try-On** (`cloth-v4`) | Super like | Renders the shopper wearing the dress. Claude then judges the try-on image itself, not just the product photo |
 
-Try-ons are the core loop, not a gimmick. A super like is confirmed or rejected *on you*. Cupid's dates use try-ons to filter what it recommends. Each verdict is fed back into what Cupid learns.
+Try-ons are part of how Cupid learns, not a gimmick. A super like is confirmed or rejected *on you*, and that verdict teaches Cupid something a swipe can't: the style appealed, but it doesn't work on you.
 
 ## How the self-learning works
 

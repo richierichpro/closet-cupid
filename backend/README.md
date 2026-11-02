@@ -66,4 +66,4 @@ The frontend (`../frontend`, `npm run dev`) proxies `/api` and `/images` here.
 | `cupid/simulate.py` | Fake users with known taste (testing only; never used by the app) |
 | `cupid/agent.py` | Cupid's LLM mind (Claude): learns a profile after each swipe, plans the next cards and experiments, writes its own searches, judges try-ons, asks this-or-that questions |
 | `cupid/youcam.py` | YouCam APIs: Skin Tone Analysis and Clothes Virtual Try-On (cloth-v4) |
-| `cupid/api.py` | Sessions, swipes, look-alikes, Cupid's dates, round payoffs, matches, live board and brand analytics |
+| `cupid/api.py` | Sessions, swipes, look-alikes, round payoffs with this-or-that questions, matches, live board and brand analytics |

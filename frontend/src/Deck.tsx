@@ -69,11 +69,10 @@ export default function Deck({ sid, onMatches, onRestart }: { sid: string; onMat
       try {
         const evs = await api.events(sid, lastEvent.current)
         if (evs.length) lastEvent.current = Math.max(...evs.map(e => e.id))
-        // Cupid's thoughts live on the board; only its dates and errors get a toast.
+        // Cupid's thoughts live on the board; only errors get a toast.
         const e = evs.findLast(x => x.type !== 'thought')
         if (primed && e) {
-          if (e.type === 'dates') flash({ kind: 'match', text: e.text })
-          else flash({ kind: e.type, text: e.text })
+          flash({ kind: e.type, text: e.text })
         }
         primed = true
       } catch { /* the next poll will catch up */ } finally {
@@ -210,8 +209,7 @@ export default function Deck({ sid, onMatches, onRestart }: { sid: string; onMat
         <Payoff sid={sid} data={payoff} onMatches={onMatches} onNext={() => {
           setPayoff(null)
           setFit(null)
-          // Ask again: if Cupid's dates came back meanwhile, the next round opens with them.
-          api.next(sid).then(show).catch(() => show(pendingNext.current))
+          show(pendingNext.current)
         }} />
       )}
     </>

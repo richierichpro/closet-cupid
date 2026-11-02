@@ -17,9 +17,9 @@ export interface Card {
   slot: string
   bet: 'like' | 'nope' | null
   line: string
-  // set when Cupid chose this card: its LLM's picks, its dates, or a look-alike of a dress you loved ('of' is that dress)
-  pick: { purpose: 'best' | 'test' | 'surprise' | 'date' | 'alike'; label: string; of?: string | null } | null
-  tryon?: string | null   // the shopper wearing it, when Cupid tried it on them on a date
+  // set when Cupid chose this card: its LLM's picks, or a look-alike of a dress you loved ('of' is that dress)
+  pick: { purpose: 'best' | 'test' | 'surprise' | 'alike'; label: string; of?: string | null } | null
+  tryon?: string | null   // the shopper wearing it, on the matches list when they tried it on
   green: string[]
   red: string[]
   tags: Record<string, string>
@@ -47,7 +47,6 @@ export interface Payoff {
   liked: number
   swipes: number
   your_type: YourType
-  cupid_search: Search | null
 }
 
 export interface SwipeResult {
@@ -85,7 +84,6 @@ export interface Report {
   profile: Profile | null
   experiments: { hypothesis: string; status: 'testing' | 'confirmed' | 'rejected'; evidence: string }[]
   planned_shown: number
-  dates: DateRound[]
   llm: string | null
 }
 
@@ -126,7 +124,7 @@ export interface Verdict {
 
 export interface MindEvent {
   id: number
-  type: 'thought' | 'error' | 'dates'
+  type: 'thought' | 'error'
   text: string
   item: { id: string; image: string; title: string } | null
 }
@@ -156,7 +154,7 @@ export interface Interview {
   questions: Question[]
 }
 
-// Every dress the shopper has seen on themselves: their super likes ('you') and Cupid's dates.
+// Every dress the shopper has tried on (their super likes), with Cupid's verdict.
 export interface Look {
   id: string
   title: string
@@ -164,15 +162,7 @@ export interface Look {
   link: string
   image: string
   tryon: string
-  by: 'you' | 'cupid'
   verdict: Verdict | null
-}
-
-// After each round Cupid tries a few dresses on the shopper by itself and keeps only what works on them.
-export interface DateRound {
-  round: number
-  status: 'trying' | 'done'
-  tried: { id: string; title: string; image: string; found: boolean; tryon: string | null; verdict: Verdict | null; error: string | null }[]
 }
 
 export interface Profile {
@@ -247,7 +237,6 @@ export const api = {
   rewind: (sid: string) => call<Card>(`/api/sessions/${sid}/rewind`, { method: 'POST' }),
   matches: (sid: string) => call<Card[]>(`/api/sessions/${sid}/matches`),
   report: (sid: string) => call<Report>(`/api/sessions/${sid}/report`),
-  dates: (sid: string) => call<DateRound[]>(`/api/sessions/${sid}/dates`),
   questions: (sid: string, round: number) => call<Interview>(`/api/sessions/${sid}/questions/${round}`),
   answer: (sid: string, round: number, i: number, answer: 'a' | 'b' | 'neither') =>
     call<Question>(`/api/sessions/${sid}/questions/${round}/${i}`, { method: 'POST', body: JSON.stringify({ answer }) }),
